@@ -1,0 +1,120 @@
+Laboratório: Análise de Portas e Ligações de Rede no Windows
+Objetivo
+Identificar as ligações de rede e as portas abertas num computador pessoal com Windows, descobrir que programa está por trás de cada uma, confirmar se é legítimo e reduzir a superfície de ataque, fechando o que não é necessário.
+Ambiente
+• Equipamento: Microsoft Surface com Windows
+• Ferramentas: Linha de Comandos (CMD) como administrador, PowerShell, Definições do Windows, Segurança do Windows
+• Rede: rede doméstica com router
+Metodologia
+O ciclo usado para cada ligação ou porta foi:
+1.  Listar as ligações e as portas
+2.  Filtrar o que interessa
+3.  Identificar o processo pelo PID
+4.  Verificar o caminho do executável
+5.  Verificar a assinatura digital
+6.  Decidir: manter, desligar ou bloquear
+7.  Confirmar o resultado
+Comandos usados
+Listar todas as ligações
+netstat -ano
+• -a: mostra todas as ligações e portas à escuta
+• -n: mostra endereços e portas em números, sem converter para nomes
+• -o: mostra o PID (número do processo) responsável
+Colunas: Protocolo (TCP/UDP), Endereço local, Endereço externo, Estado, PID.
+Filtrar ligações ativas
+netstat -ano | findstr ESTABLISHED
+A barra vertical | envia o resultado para o findstr, que mostra só as linhas com a palavra indicada. Só aparece TCP, porque o UDP não estabelece ligações.
+Filtrar portas à escuta
+netstat -ano | findstr LISTENING
+Ver todas as ligações de um processo
+netstat -ano | findstr 15444
+Identificar o programa pelo PID
+tasklist /fi "PID eq 15444"
+• tasklist: lista os processos em execução
+• /fi: aplica um filtro
+• "PID eq 15444": o PID é igual (equal) a 15444
+Para ver os serviços dentro de um svchost.exe:
+tasklist /svc /fi "PID eq 3652"
+Ver o caminho do executável
+powershell "Get-Process -Id 3652 | Select-Object Path"
+Verificar a assinatura digital
+powershell "Get-AuthenticodeSignature C:\Windows\System32\svchost.exe"
+O estado Valid confirma que o ficheiro é do editor indicado e não foi alterado.
+Ver aparelhos da rede local
+arp -a
+Mostra a tabela ARP: endereços IP e endereços físicos (MAC) dos aparelhos com quem o PC comunicou recentemente.
+Conceitos importantes
+• PID e portas altas são temporários: mudam sempre que o programa arranca. Investiga-se pelo programa, não pelo número.
+• 127.0.0.1 (localhost): a porta só aceita ligações do próprio computador.
+• 192.168.x.x: endereço do PC na rede doméstica; só os aparelhos da rede o alcançam.
+• 0.0.0.0: a porta aceita ligações de qualquer interface de rede.
+• ESTABLISHED: ligação ativa. LISTENING: porta aberta à espera de ligações.
+• Porta 443: HTTPS, tráfego web encriptado.
+• Three-way handshake (TCP): SYN, SYN-ACK, ACK. Só depois a ligação fica ESTABLISHED.
+• Unicast / Broadcast / Multicast: um para um, um para todos (255.255.255.255), um para um grupo (224.0.0.x).
+• Superfície de ataque: cada funcionalidade ou porta ligada é um possível ponto de entrada.
+Resultados
+Ligação / Porta
+Processo
+Conclusão
+Ação
+127.0.0.1 (ligação local)
+AppleMobileDeviceLauncher.exe
+App "Apple Devices" da Microsoft Store (pasta WindowsApps), legítima mas não usada, cerca de 11 GB
+Desinstalada
+Externo 23.22.50.8:443
+chrome.exe
+Tráfego HTTPS do navegador, normal
+Manter
+Processo 3652
+svchost.exe
+Caminho em C:\Windows\System32 e assinatura Valid: legítimo
+Manter
+0.0.0.0:7680
+svchost.exe (Otimização de Entrega)
+Partilha peer-to-peer de atualizações do Windows; desnecessária
+Desligada nas Definições, porta fechada e confirmada
+0.0.0.0:5040
+svchost.exe (CDPSvc, PID 9856, confirmado)
+Plataforma de dispositivos ligados (Ligação ao Telemóvel, Partilha nas proximidades)
+A avaliar / bloquear na firewall
+0.0.0.0:49664
+lsass.exe (PID 1248, confirmado)
+Processo de autenticação do Windows; nunca terminar
+Proteção da Autoridade de Segurança Local confirmada como ligada
+192.168.x.x:52686
+chrome.exe
+Porta temporária do Chrome na rede local
+Manter, monitorizar
+Aparelhos na rede (arp -a): router (192.168.1.1) e um outro aparelho (192.168.1.170). Os restantes endereços eram multicast (224.0.0.22, 224.0.0.251 mDNS, 224.0.0.252 LLMNR) e broadcast (255.255.255.255).
+Fechar a porta 7680 (Otimização de Entrega)
+1.  Definições > Windows Update > Opções avançadas
+2.  Otimização de Entrega
+3.  Desligar o interruptor principal (transferências de outros dispositivos)
+4.  Confirmar com netstat -ano | findstr LISTENING
+Bloquear uma porta na firewall
+Duas formas de fechar uma porta:
+1.  Desligar o serviço: nenhum programa fica à escuta; a porta fecha de facto.
+2.  Bloquear na firewall: o serviço continua à escuta, mas o tráfego não passa.
+Usar as duas é defesa em profundidade.
+Criar regra (CMD como administrador):
+netsh advfirewall firewall add rule name="Bloquear TCP 5040" dir=in action=block protocol=TCP localport=5040
+Desativar temporariamente:
+netsh advfirewall firewall set rule name="Bloquear TCP 5040" new enable=no
+Reativar:
+netsh advfirewall firewall set rule name="Bloquear TCP 5040" new enable=yes
+Também é possível pela interface gráfica: Firewall do Windows Defender com Segurança Avançada > Regras de Entrada > Nova Regra > Porta.
+Riscos estudados
+• Extensões do navegador: podem ler tudo o que se vê no navegador e enviar dados por ligações normais. Rever em chrome://extensions.
+• LLMNR: um atacante na mesma rede pode responder a pedidos de nomes e obter o hash da palavra-passe do Windows. Risco maior em Wi-Fi público.
+• lsass.exe: alvo de ferramentas de roubo de credenciais; manter a proteção LSA ligada.
+• svchost.exe: malware pode imitar o nome; verificar sempre caminho e assinatura.
+Conclusões
+• A maioria das ligações eram legítimas (Windows, Chrome).
+• Foi removida uma aplicação não usada e fechada uma porta desnecessária.
+• A linha de comandos permite filtrar, automatizar e trabalhar remotamente; muitas destas informações também existem na interface gráfica (por exemplo, resmon, separador Rede).
+• Esta análise reduz o risco, mas não garante 100% de deteção: malware avançado pode esconder-se.
+Próximos passos
+• Decidir se bloqueia a porta 5040 (CDPSvc) na firewall
+• Ver todos os aparelhos ligados na página do router
+• Repetir a análise periodicamente e comparar resultados
